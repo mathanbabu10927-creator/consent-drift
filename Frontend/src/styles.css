@@ -1,3 +1,10 @@
+.api-error {
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid #d86a6a;
+  color: #8b2020;
+  background: #fff0f0;
+}
 :root {
   font-family: Inter, 'Segoe UI', sans-serif;
   line-height: 1.5;

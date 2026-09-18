@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { AnalyzeButton } from './components/AnalyzeButton';
 import { Footer } from './components/Footer';
 import { LoadingIndicator } from './components/LoadingIndicator';
@@ -9,64 +9,35 @@ import { PrivacyChangeCard } from './components/PrivacyChangeCard';
 import { RiskBadge } from './components/RiskBadge';
 import { SummaryCard } from './components/SummaryCard';
 import { UploadCard } from './components/UploadCard';
-import { mockAnalysisData } from './data/mockData';
+import type { AnalysisResponse, AnalysisResult } from './types';
 
+const API_URL = 'http://127.0.0.1:8000/analyze';
 const initialUploadState = { olderApk: null as File | null, newerApk: null as File | null };
 
-const mockState: typeof mockAnalysisData = {
-  old_version: '1.0',
-  new_version: '1.1',
-  permissions_added: ['android.permission.RECORD_AUDIO'],
-  permissions_removed: ['android.permission.READ_CONTACTS'],
-  risk_level: 'HIGH',
-  permissions: [
-    {
-      name: 'android.permission.RECORD_AUDIO',
-      status: 'Added',
-      oldValue: 'Not declared',
-      newValue: 'Declared',
-      description: 'New microphone capability was added for voice capture during onboarding.'
-    },
-    {
-      name: 'android.permission.CAMERA',
-      status: 'Unchanged',
-      oldValue: 'Granted',
-      newValue: 'Granted',
-      description: 'Camera access remains active and unchanged.'
-    },
-    {
-      name: 'android.permission.READ_CONTACTS',
-      status: 'Removed',
-      oldValue: 'Declared',
-      newValue: 'Not declared',
-      description: 'Contact access was removed from the newer build.'
-    }
-  ],
-  privacyChanges: [
-    {
-      title: 'Microphone permission was newly added',
-      description: 'The app now requests audio capture during login and onboarding.',
-      impact: 'This broadens the user consent surface and should be clearly disclosed.',
-      severity: 'High'
-    },
-    {
-      title: 'Contact access was removed',
-      description: 'The app no longer reads the contact list from the device.',
-      impact: 'This reduces data exposure, but the remaining recording permission still requires review.',
-      severity: 'Medium'
-    }
-  ]
-};
+async function analyzeApk(file: File): Promise<AnalysisResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
 
-function HomePage() {
-  const navigate = useNavigate();
+  const response = await fetch(API_URL, { method: 'POST', body: formData });
+  const payload = (await response.json().catch(() => null)) as { detail?: string } | AnalysisResponse | null;
+
+  if (!response.ok) {
+    const detail = payload && 'detail' in payload ? payload.detail : undefined;
+    throw new Error(detail ?? `Analysis failed with HTTP ${response.status}.`);
+  }
+
+  return payload as AnalysisResponse;
+}
+
+interface HomePageProps {
+  loading: boolean;
+  error: string | null;
+  onAnalyze: (uploads: typeof initialUploadState) => void;
+}
+
+function HomePage({ loading, error, onAnalyze }: HomePageProps) {
   const [uploads, setUploads] = useState(initialUploadState);
   const readyToAnalyze = Boolean(uploads.olderApk && uploads.newerApk);
-
-  const handleAnalyze = () => {
-    if (!readyToAnalyze) return;
-    navigate('/analyzing');
-  };
 
   return (
     <main className="page-content home-page">
@@ -94,11 +65,12 @@ function HomePage() {
           />
         </div>
 
+        {error && <p className="api-error" role="alert">{error}</p>}
         <div className="cta-row">
           <AnalyzeButton
-            disabled={!readyToAnalyze}
-            onClick={handleAnalyze}
-            label={!readyToAnalyze ? 'Upload both APKs' : 'Analyze APKs'}
+            disabled={!readyToAnalyze || loading}
+            onClick={() => onAnalyze(uploads)}
+            label={loading ? 'Analyzing APKs...' : !readyToAnalyze ? 'Upload both APKs' : 'Analyze APKs'}
           />
         </div>
       </section>
@@ -106,186 +78,71 @@ function HomePage() {
   );
 }
 
-function AnalyzingPage() {
+function ResultsPage({ results }: { results: AnalysisResult[] }) {
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      navigate('/results', { state: mockState });
-    }, 1800);
-
-    return () => window.clearTimeout(timer);
-  }, [navigate]);
-
-  return (
-    <main className="page-content">
-      <LoadingIndicator />
-    </main>
-  );
-}
-
-function ResultsPage() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const payload = (location.state as typeof mockState | undefined) ?? mockState;
-  const analysis = { ...mockAnalysisData, ...payload };
-
-  const summary = useMemo<Array<{ label: string; value: string; tone: 'neutral' | 'warning' | 'danger' }>>(
+  const totalSensitive = results.reduce((sum, result) => sum + result.data.analysis.sensitive_permission_count, 0);
+  const totalPermissions = results.reduce((sum, result) => sum + result.data.analysis.total_permissions, 0);
+  const summary = useMemo(
     () => [
-      { label: 'Old Version', value: analysis.old_version, tone: 'neutral' },
-      { label: 'New Version', value: analysis.new_version, tone: 'neutral' },
-      { label: 'Added', value: String(analysis.permissions_added.length), tone: 'warning' },
-      { label: 'Removed', value: String(analysis.permissions_removed.length), tone: 'danger' },
-      { label: 'Risk Level', value: analysis.risk_level, tone: analysis.risk_level === 'HIGH' ? 'danger' : 'warning' }
+      { label: 'APK Reports', value: String(results.length), tone: 'neutral' as const },
+      { label: 'Total Permissions', value: String(totalPermissions), tone: 'neutral' as const },
+      { label: 'Sensitive Findings', value: String(totalSensitive), tone: totalSensitive ? 'danger' as const : 'warning' as const }
     ],
-    [analysis]
+    [results, totalPermissions, totalSensitive]
   );
 
   return (
     <main className="page-content dashboard-page">
       <section className="section dashboard-header">
         <div>
-          <p className="eyebrow">Risk summary</p>
-          <h2>Package comparison dashboard</h2>
+          <p className="eyebrow">Live API response</p>
+          <h2>Package analysis dashboard</h2>
         </div>
         <div className="header-actions">
-          <RiskBadge level={analysis.risk_level} />
-          <button
-            className="btn btn-secondary"
-            onClick={() => navigate('/changelog', { state: payload })}
-          >
-            View changelog
-          </button>
+          <RiskBadge level={totalSensitive ? 'HIGH' : 'LOW'} />
+          <button className="btn btn-secondary" onClick={() => navigate('/changelog')}>View changelog</button>
         </div>
       </section>
 
       <section className="summary-grid">
-        {summary.map((item) => (
-          <SummaryCard key={item.label} label={item.label} value={item.value} tone={item.tone} />
-        ))}
+        {summary.map((item) => <SummaryCard key={item.label} label={item.label} value={item.value} tone={item.tone} />)}
       </section>
 
-      <section className="details-grid">
-        <div className="section">
+      {results.map((result) => (
+        <section className="section privacy-panel" key={result.fileName}>
           <div className="panel-header-row">
-            <h3>Permission breakdown</h3>
-            <span className="muted-link">View all</span>
+            <div>
+              <h3>{result.label}: {result.fileName}</h3>
+              <p className="muted-link">{result.data.apk_info.package_name || 'Package name unavailable'}</p>
+            </div>
           </div>
           <div className="mini-stat-list">
-            <div>
-              <span>Added</span>
-              <strong>{analysis.permissions_added.length}</strong>
-            </div>
-            <div>
-              <span>Removed</span>
-              <strong>{analysis.permissions_removed.length}</strong>
-            </div>
-            <div>
-              <span>Unchanged</span>
-              <strong>{analysis.permissions.filter((p) => p.status === 'Unchanged').length}</strong>
-            </div>
+            <div><span>App</span><strong>{result.data.apk_info.app_name || 'Unknown'}</strong></div>
+            <div><span>Version</span><strong>{result.data.apk_info.version_name || 'Unknown'}</strong></div>
+            <div><span>Sensitive</span><strong>{result.data.analysis.sensitive_permission_count}</strong></div>
           </div>
-        </div>
-
-        <div className="section">
-          <div className="panel-header-row">
-            <h3>Consent impact</h3>
-            <span className="muted-link">Security policy</span>
-          </div>
-          <ul className="impact-list">
-            <li>Background tracking increased</li>
-            <li>Microphone access was added</li>
-            <li>Contact access was removed</li>
-          </ul>
-          <button
-            className="btn btn-primary new-analysis-btn"
-            onClick={() => navigate('/')}
-          >
-            New Analysis
-          </button>
-        </div>
-      </section>
-
-      <div className="permission-card-group">
-        <div className="permission-card">
-          <h4>Added permissions</h4>
-          <div className="permission-meta">
-            <span className="status-pill added">Added</span>
-            <strong>android.permission.RECORD_AUDIO</strong>
-          </div>
-          <p>Used for voice-enabled verification and guided prompts.</p>
-        </div>
-        <div className="permission-card">
-          <h4>Unchanged permissions</h4>
-          <div className="permission-meta">
-            <span className="status-pill unchanged">Unchanged</span>
-            <strong>android.permission.CAMERA</strong>
-          </div>
-          <p>Still required for document capture and verification.</p>
-        </div>
-      </div>
-
-      <button
-        className="btn btn-primary"
-        onClick={() => navigate('/changelog', { state: payload })}
-      >
-        Review Risk Details
-      </button>
-
-      <PermissionTable rows={analysis.permissions} />
+          <PermissionTable permissions={result.data.permissions.all} />
+        </section>
+      ))}
     </main>
   );
 }
 
-function ChangelogPage() {
-  const location = useLocation();
-  const payload = (location.state as typeof mockState | undefined) ?? mockState;
-  const analysis = { ...mockAnalysisData, ...payload };
-
+function ChangelogPage({ results }: { results: AnalysisResult[] }) {
   return (
     <main className="page-content dashboard-page">
       <section className="section dashboard-header">
-        <div>
-          <p className="eyebrow">Privacy changelog</p>
-          <h2>Risk details and consent changes</h2>
-        </div>
-        <div className="header-actions">
-          <RiskBadge level={analysis.risk_level} />
-        </div>
+        <div><p className="eyebrow">Live API response</p><h2>Permission and privacy details</h2></div>
       </section>
-
       <section className="section privacy-panel">
-        <div className="panel-header-row">
-          <h3>Permission delta</h3>
-        </div>
-        <div className="permission-card-group">
-          <div className="permission-card">
-            <h4>Added permissions</h4>
-            <div className="permission-meta">
-              <span className="status-pill added">Added</span>
-              <strong>android.permission.RECORD_AUDIO</strong>
-            </div>
-            <p>Voice capture is now requested during onboarding and verification.</p>
-          </div>
-          <div className="permission-card">
-            <h4>Unchanged permissions</h4>
-            <div className="permission-meta">
-              <span className="status-pill unchanged">Unchanged</span>
-              <strong>android.permission.CAMERA</strong>
-            </div>
-            <p>Camera permission remains necessary for identity validation and document scanning.</p>
-          </div>
-        </div>
-        <PermissionTable rows={analysis.permissions} />
-      </section>
-
-      <section className="section privacy-panel">
-        <div className="panel-header-row">
-          <h3>Privacy changelog</h3>
-        </div>
         <div className="privacy-grid">
-          {(analysis.privacyChanges ?? []).map((item) => (
-            <PrivacyChangeCard key={item.title} item={item} />
+          {results.map((result) => (
+            <PrivacyChangeCard
+              key={result.fileName}
+              title={`${result.label} sensitive permissions`}
+              description={`${result.data.permissions.sensitive.length} sensitive permission(s) were detected.`}
+              impact={result.data.permissions.sensitive.join(', ') || 'No sensitive permissions detected.'}
+            />
           ))}
         </div>
       </section>
@@ -294,19 +151,44 @@ function ChangelogPage() {
 }
 
 function App() {
+  const navigate = useNavigate();
+  const [results, setResults] = useState<AnalysisResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleAnalyze = async (uploads: typeof initialUploadState) => {
+    if (!uploads.olderApk || !uploads.newerApk) return;
+    setError(null);
+    setLoading(true);
+
+    try {
+      const analyzed = await Promise.all([
+        analyzeApk(uploads.olderApk),
+        analyzeApk(uploads.newerApk)
+      ]);
+      setResults([
+        { label: 'Older APK', fileName: uploads.olderApk.name, data: analyzed[0] },
+        { label: 'Newer APK', fileName: uploads.newerApk.name, data: analyzed[1] }
+      ]);
+      navigate('/results');
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'The APK analysis request failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="app-shell">
       <Navbar />
-
       <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/analyzing" element={<AnalyzingPage />} />
-        <Route path="/results" element={<ResultsPage />} />
-        <Route path="/changelog" element={<ChangelogPage />} />
+        <Route path="/" element={<HomePage loading={loading} error={error} onAnalyze={handleAnalyze} />} />
+        <Route path="/results" element={results.length ? <ResultsPage results={results} /> : <Navigate to="/" replace />} />
+        <Route path="/changelog" element={results.length ? <ChangelogPage results={results} /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-
       <Footer />
+      {loading && <LoadingIndicator />}
     </div>
   );
 }

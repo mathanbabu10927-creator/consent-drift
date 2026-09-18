@@ -1,10 +1,8 @@
-import type { PermissionRow } from '../data/mockData';
-
 interface PermissionTableProps {
-  rows: PermissionRow[];
+  permissions: string[];
 }
 
-export function PermissionTable({ rows }: PermissionTableProps) {
+export function PermissionTable({ permissions }: PermissionTableProps) {
   return (
     <div className="table-wrap section">
       <div className="table-header">
@@ -22,15 +20,9 @@ export function PermissionTable({ rows }: PermissionTableProps) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.name}>
-              <td>{row.name}</td>
-              <td>
-                <span className={`status-pill ${row.status.toLowerCase()}`}>{row.status}</span>
-              </td>
-              <td>{row.oldValue}</td>
-              <td>{row.newValue}</td>
-              <td>{row.description}</td>
+          {permissions.map((permission) => (
+            <tr key={permission}>
+              <td colSpan={5}>{permission}</td>
             </tr>
           ))}
         </tbody>

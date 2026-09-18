@@ -1,18 +1,17 @@
-import type { PrivacyChange } from '../data/mockData';
-
 interface PrivacyChangeCardProps {
-  item: PrivacyChange;
+  title: string;
+  description: string;
+  impact: string;
 }
 
-export function PrivacyChangeCard({ item }: PrivacyChangeCardProps) {
+export function PrivacyChangeCard({ title, description, impact }: PrivacyChangeCardProps) {
   return (
     <article className="privacy-card">
       <div className="privacy-header">
-        <h4>{item.title}</h4>
-        <span className={`severity severity-${item.severity.toLowerCase()}`}>{item.severity}</span>
+        <h4>{title}</h4>
       </div>
-      <p>{item.description}</p>
-      <small>{item.impact}</small>
+      <p>{description}</p>
+      <small>{impact}</small>
     </article>
   );
 }

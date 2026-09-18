@@ -1,4 +1,4 @@
-import type { RiskLevel } from '../data/mockData';
+type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 interface RiskBadgeProps {
   level: RiskLevel;
