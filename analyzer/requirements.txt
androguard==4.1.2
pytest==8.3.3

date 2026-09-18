@@ -1,0 +1,55 @@
+# analyzer/tests/test_permission_diff.py
+
+from analyzer.app.permission_diff import compare_permissions
+
+
+def test_permission_diff_adds_new_permission():
+    old_version = {"permissions": ["INTERNET", "CAMERA"]}
+    new_version = {"permissions": ["INTERNET", "CAMERA", "LOCATION"]}
+
+    result = compare_permissions(old_version, new_version)
+
+    assert result == {
+        "added_permissions": ["LOCATION"],
+        "removed_permissions": [],
+        "unchanged_permissions": ["CAMERA", "INTERNET"],
+    }
+
+
+def test_permission_diff_removes_existing_permission():
+    old_version = {"permissions": ["INTERNET", "CAMERA", "LOCATION"]}
+    new_version = {"permissions": ["INTERNET", "CAMERA"]}
+
+    result = compare_permissions(old_version, new_version)
+
+    assert result == {
+        "added_permissions": [],
+        "removed_permissions": ["LOCATION"],
+        "unchanged_permissions": ["CAMERA", "INTERNET"],
+    }
+
+
+def test_permission_diff_no_changes():
+    old_version = {"permissions": ["INTERNET", "CAMERA", "LOCATION"]}
+    new_version = {"permissions": ["INTERNET", "CAMERA", "LOCATION"]}
+
+    result = compare_permissions(old_version, new_version)
+
+    assert result == {
+        "added_permissions": [],
+        "removed_permissions": [],
+        "unchanged_permissions": ["CAMERA", "INTERNET", "LOCATION"],
+    }
+
+
+def test_permission_diff_deduplicates_and_sorts():
+    old_version = {"permissions": ["CAMERA", "INTERNET", "CAMERA", "LOCATION"]}
+    new_version = {"permissions": ["LOCATION", "INTERNET", "INTERNET", "CALL_LOG"]}
+
+    result = compare_permissions(old_version, new_version)
+
+    assert result == {
+        "added_permissions": ["CALL_LOG"],
+        "removed_permissions": ["CAMERA"],
+        "unchanged_permissions": ["INTERNET", "LOCATION"],
+    }
